@@ -1,0 +1,269 @@
+kind: Template
+apiVersion: v1
+labels:
+  version: "6.2"
+  group: infrastructure
+metadata:
+  annotations:
+    description: SonarQube server
+    tags: sonarqube,sonar,postgresql,postgresql-persistent,ci,instant-app
+    version: "6.2"
+  name: sonarqube-postgresql-persistent
+objects:
+- kind: ServiceAccount
+  apiVersion: v1
+  metadata:
+    labels:
+      app: ${APPLICATION_NAME}
+    name: ${APPLICATION_NAME}
+- kind: DeploymentConfig
+  apiVersion: v1
+  metadata:
+    labels:
+      application: ${APPLICATION_NAME}
+    name: ${APPLICATION_NAME}
+  spec:
+    replicas: 1
+    selector:
+      app: ${APPLICATION_NAME}
+      deploymentconfig: ${APPLICATION_NAME}
+    strategy:
+      resources: {}
+      rollingParams:
+        intervalSeconds: 1
+        maxSurge: 25%
+        maxUnavailable: 25%
+        timeoutSeconds: 600
+        updatePeriodSeconds: 1
+      type: Recreate
+    template:
+      metadata:
+        labels:
+          application: ${APPLICATION_NAME}
+          deploymentconfig: ${APPLICATION_NAME}
+      spec:
+        serviceAccountName: ${APPLICATION_NAME}
+        containers:
+        - env:
+          - name: SONARQUBE_JDBC_URL
+            value: jdbc:postgresql://${APPLICATION_NAME}-postgresql:5432/${DATABASE_NAME}
+          - name: SONARQUBE_JDBC_USERNAME
+            value: ${DB_USERNAME}
+          - name: SONARQUBE_JDBC_PASSWORD
+            value: ${DB_PASSWORD}
+          image: ${DOCKER_IMAGE_NAME}:${DOCKER_IMAGE_VERSION}
+          imagePullPolicy: IfNotPresent
+          name: ${APPLICATION_NAME}
+          ports:
+          - containerPort: 9000
+            protocol: TCP
+          resources: {}
+          terminationMessagePath: /dev/termination-log
+          volumeMounts:
+          - mountPath: /opt/sonarqube/data
+            name: ${APPLICATION_NAME}-data
+          - mountPath: /opt/sonarqube/extensions
+            name: ${APPLICATION_NAME}-extensions
+          livenessProbe:
+            httpGet:
+              path: /
+              port: 9000
+              scheme: HTTP
+            initialDelaySeconds: 30
+            timeoutSeconds: 1
+            periodSeconds: 10
+            successThreshold: 1
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 9000
+              scheme: HTTP
+            initialDelaySeconds: 30
+            timeoutSeconds: 1
+            periodSeconds: 10
+            successThreshold: 1
+            failureThreshold: 3
+        dnsPolicy: ClusterFirst
+        restartPolicy: Always
+        securityContext: {}
+        terminationGracePeriodSeconds: 30
+        volumes:
+        - name: ${APPLICATION_NAME}-data
+          persistentVolumeClaim:
+            claimName: ${APPLICATION_NAME}-data
+        - name: ${APPLICATION_NAME}-extensions
+          persistentVolumeClaim:
+            claimName: ${APPLICATION_NAME}-extensions
+    test: false
+    triggers:
+    - type: ConfigChange
+- kind: DeploymentConfig
+  apiVersion: v1
+  metadata:
+    labels:
+      application: ${APPLICATION_NAME}
+    name: ${APPLICATION_NAME}-postgresql
+  spec:
+    replicas: 1
+    selector:
+      deploymentConfig: ${APPLICATION_NAME}-postgresql
+    strategy:
+      type: Recreate
+    template:
+      metadata:
+        labels:
+          application: ${APPLICATION_NAME}
+          deploymentConfig: ${APPLICATION_NAME}-postgresql
+        name: ${APPLICATION_NAME}-postgresql
+      spec:
+        containers:
+        - env:
+          - name: POSTGRESQL_USER
+            value: ${DB_USERNAME}
+          - name: POSTGRESQL_PASSWORD
+            value: ${DB_PASSWORD}
+          - name: POSTGRESQL_DATABASE
+            value: ${DB_DATABASE}
+          image: postgresql
+          imagePullPolicy: Always
+          name: ${APPLICATION_NAME}-postgresql
+          ports:
+          - containerPort: 5432
+            protocol: TCP
+          volumeMounts:
+          - mountPath: /var/lib/pgsql/data
+            name: ${APPLICATION_NAME}-postgresql
+        terminationGracePeriodSeconds: 60
+        volumes:
+        - name: ${APPLICATION_NAME}-postgresql
+          persistentVolumeClaim:
+            claimName: ${APPLICATION_NAME}-postgresql
+    triggers:
+    - type: ConfigChange
+- kind: Service
+  apiVersion: v1
+  metadata:
+    annotations:
+      description: The Sonarqube server's http port
+    labels:
+      app: ${APPLICATION_NAME}
+    name: ${APPLICATION_NAME}
+  spec:
+    ports:
+    - port: 9000
+      targetPort: 9000
+    selector:
+      app: ${APPLICATION_NAME}
+      deploymentconfig: ${APPLICATION_NAME}
+    sessionAffinity: None
+    type: ClusterIP
+  status:
+    loadBalancer: {}
+- kind: Service
+  apiVersion: v1
+  metadata:
+    annotations:
+      description: The Sonarqube database server's port.
+    labels:
+      app: ${APPLICATION_NAME}
+    name: ${APPLICATION_NAME}-postgresql
+  spec:
+    ports:
+    - port: 5432
+      targetPort: 5432
+    selector:
+      deploymentConfig: ${APPLICATION_NAME}-postgresql
+- kind: Route
+  apiVersion: v1
+  metadata:
+    annotations:
+      description: Route for application's http service.
+    name: ${APPLICATION_NAME}
+    labels:
+      app: ${APPLICATION_NAME}
+  spec:
+    host: ${HOSTNAME}
+    to:
+      kind: Service
+      name: ${APPLICATION_NAME}
+      weight: 100
+    port:
+      targetPort: 9000-http
+    tls:
+      termination: edge
+      insecureEdgeTerminationPolicy: Redirect
+- kind: PersistentVolumeClaim
+  apiVersion: v1
+  metadata:
+    name: ${APPLICATION_NAME}-data
+  spec:
+    accessModes:
+      - ReadWriteOnce
+    resources:
+      requests:
+        storage: ${SONARQUBE_DATA_VOLUME_CAPACITY}
+- kind: PersistentVolumeClaim
+  apiVersion: v1
+  metadata:
+    name: ${APPLICATION_NAME}-extensions
+  spec:
+    accessModes:
+      - ReadWriteOnce
+    resources:
+      requests:
+        storage: ${SONARQUBE_EXTENSIONS_VOLUME_CAPACITY}
+- apiVersion: v1
+  kind: PersistentVolumeClaim
+  metadata:
+    labels:
+      application: ${APPLICATION_NAME}
+    name: ${APPLICATION_NAME}-postgresql
+  spec:
+    accessModes:
+    - ReadWriteOnce
+    resources:
+      requests:
+        storage: ${SONARQUBE_POSTGRESQL_VOLUME_CAPACITY}
+parameters:
+- description: The name for the application.
+  name: APPLICATION_NAME
+  required: true
+  value: sonarqube
+- description: Docker image name
+  name: DOCKER_IMAGE_NAME
+  required: true
+  value: willemvd/openshift-sonarqube
+- description: Docker image version
+  name: DOCKER_IMAGE_VERSION
+  required: true
+  value: "6.2"
+- description: 'Custom hostname for http service route.  Leave blank for default hostname, e.g.: <application-name>-<project>.<default-domain-suffix>'
+  name: HOSTNAME
+  value: ""
+- description: Volume space available for Sonarqube data, e.g. 512Mi, 2Gi
+  name: SONARQUBE_DATA_VOLUME_CAPACITY
+  required: true
+  value: 5Gi
+- description: Volume space available for Sonarqube extensions, e.g. 512Mi, 2Gi
+  name: SONARQUBE_EXTENSIONS_VOLUME_CAPACITY
+  required: true
+  value: 2Gi
+- description: Volume space available for SonarQube PostgreSQL database, e.g. 512Mi, 2Gi
+  name: SONARQUBE_POSTGRESQL_VOLUME_CAPACITY
+  required: true
+  value: 5Gi
+- description: Database name
+  name: DB_DATABASE
+  required: true
+  value: sonarqube
+- description: Database user name
+  from: user[a-zA-Z0-9]{3}
+  generate: expression
+  name: DB_USERNAME
+  required: true
+- description: Database user password
+  from: '[a-zA-Z0-9]{8}'
+  generate: expression
+  name: DB_PASSWORD
+  required: true
