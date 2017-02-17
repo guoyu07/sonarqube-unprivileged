@@ -8,7 +8,7 @@ metadata:
     description: SonarQube server
     tags: sonarqube,sonar,postgresql,postgresql-persistent,ci,instant-app
     version: "6.2"
-  name: sonarqube-postgresql-persistent
+  name: sonarqube
 objects:
 - kind: ServiceAccount
   apiVersion: v1
@@ -16,88 +16,6 @@ objects:
     labels:
       app: ${APPLICATION_NAME}
     name: ${APPLICATION_NAME}
-- kind: DeploymentConfig
-  apiVersion: v1
-  metadata:
-    labels:
-      application: ${APPLICATION_NAME}
-    name: ${APPLICATION_NAME}
-  spec:
-    replicas: 1
-    selector:
-      app: ${APPLICATION_NAME}
-      deploymentconfig: ${APPLICATION_NAME}
-    strategy:
-      resources: {}
-      rollingParams:
-        intervalSeconds: 1
-        maxSurge: 25%
-        maxUnavailable: 25%
-        timeoutSeconds: 600
-        updatePeriodSeconds: 1
-      type: Recreate
-    template:
-      metadata:
-        labels:
-          application: ${APPLICATION_NAME}
-          deploymentconfig: ${APPLICATION_NAME}
-      spec:
-        serviceAccountName: ${APPLICATION_NAME}
-        containers:
-        - env:
-          - name: SONARQUBE_JDBC_URL
-            value: jdbc:postgresql://${APPLICATION_NAME}-postgresql:5432/${DATABASE_NAME}
-          - name: SONARQUBE_JDBC_USERNAME
-            value: ${DB_USERNAME}
-          - name: SONARQUBE_JDBC_PASSWORD
-            value: ${DB_PASSWORD}
-          image: ${DOCKER_IMAGE_NAME}:${DOCKER_IMAGE_VERSION}
-          imagePullPolicy: IfNotPresent
-          name: ${APPLICATION_NAME}
-          ports:
-          - containerPort: 9000
-            protocol: TCP
-          resources: {}
-          terminationMessagePath: /dev/termination-log
-          volumeMounts:
-          - mountPath: /opt/sonarqube/data
-            name: ${APPLICATION_NAME}-data
-          - mountPath: /opt/sonarqube/extensions
-            name: ${APPLICATION_NAME}-extensions
-          livenessProbe:
-            httpGet:
-              path: /
-              port: 9000
-              scheme: HTTP
-            initialDelaySeconds: 30
-            timeoutSeconds: 1
-            periodSeconds: 10
-            successThreshold: 1
-            failureThreshold: 3
-          readinessProbe:
-            httpGet:
-              path: /
-              port: 9000
-              scheme: HTTP
-            initialDelaySeconds: 30
-            timeoutSeconds: 1
-            periodSeconds: 10
-            successThreshold: 1
-            failureThreshold: 3
-        dnsPolicy: ClusterFirst
-        restartPolicy: Always
-        securityContext: {}
-        terminationGracePeriodSeconds: 30
-        volumes:
-        - name: ${APPLICATION_NAME}-data
-          persistentVolumeClaim:
-            claimName: ${APPLICATION_NAME}-data
-        - name: ${APPLICATION_NAME}-extensions
-          persistentVolumeClaim:
-            claimName: ${APPLICATION_NAME}-extensions
-    test: false
-    triggers:
-    - type: ConfigChange
 - kind: DeploymentConfig
   apiVersion: v1
   metadata:
@@ -126,7 +44,7 @@ objects:
           - name: POSTGRESQL_DATABASE
             value: ${DB_DATABASE}
           image: postgresql
-          imagePullPolicy: Always
+          imagePullPolicy: IfNotPresent
           name: ${APPLICATION_NAME}-postgresql
           ports:
           - containerPort: 5432
@@ -134,32 +52,107 @@ objects:
           volumeMounts:
           - mountPath: /var/lib/pgsql/data
             name: ${APPLICATION_NAME}-postgresql
+          livenessProbe:
+            tcpSocket:
+              port: 5432
+            initialDelaySeconds: 30
+            timeoutSeconds: 1
+            periodSeconds: 10
+            successThreshold: 1
+            failureThreshold: 3
+          readinessProbe:
+            exec:
+              command: [/bin/sh, '-i', '-c', 'psql -h 127.0.0.1 -U $POSTGRESQL_USER -q -d $POSTGRESQL_DATABASE -c ''SELECT 1''']
+            initialDelaySeconds: 5
+            timeoutSeconds: 1
+            periodSeconds: 10
+            successThreshold: 1
+            failureThreshold: 3
         terminationGracePeriodSeconds: 60
         volumes:
         - name: ${APPLICATION_NAME}-postgresql
           persistentVolumeClaim:
             claimName: ${APPLICATION_NAME}-postgresql
     triggers:
+    - imageChangeParams:
+        automatic: true
+        containerNames:
+        - ${APPLICATION_NAME}-postgresql
+        from:
+          kind: ImageStreamTag
+          name: postgresql:${POSTGRESQL_VERSION}
+          namespace: ${NAMESPACE}
+      type: ImageChange
     - type: ConfigChange
-- kind: Service
+- kind: DeploymentConfig
   apiVersion: v1
   metadata:
-    annotations:
-      description: The Sonarqube server's http port
     labels:
-      app: ${APPLICATION_NAME}
+      application: ${APPLICATION_NAME}
     name: ${APPLICATION_NAME}
   spec:
-    ports:
-    - port: 9000
-      targetPort: 9000
+    replicas: 1
     selector:
       app: ${APPLICATION_NAME}
       deploymentconfig: ${APPLICATION_NAME}
-    sessionAffinity: None
-    type: ClusterIP
-  status:
-    loadBalancer: {}
+    strategy:
+      type: Recreate
+    template:
+      metadata:
+        labels:
+          app: ${APPLICATION_NAME}
+          deploymentconfig: ${APPLICATION_NAME}
+      spec:
+        serviceAccountName: ${APPLICATION_NAME}
+        containers:
+        - env:
+          - name: SONARQUBE_JDBC_URL
+            value: jdbc:postgresql://${APPLICATION_NAME}-postgresql:5432/${DB_DATABASE}
+          - name: SONARQUBE_JDBC_USERNAME
+            value: ${DB_USERNAME}
+          - name: SONARQUBE_JDBC_PASSWORD
+            value: ${DB_PASSWORD}
+          image: ${DOCKER_IMAGE_NAME}:${DOCKER_IMAGE_VERSION}
+          imagePullPolicy: IfNotPresent
+          name: ${APPLICATION_NAME}
+          ports:
+          - containerPort: 9000
+            protocol: TCP
+          volumeMounts:
+          - mountPath: /opt/sonarqube/data
+            name: ${APPLICATION_NAME}-data
+          - mountPath: /opt/sonarqube/extensions
+            name: ${APPLICATION_NAME}-extensions
+          livenessProbe:
+            httpGet:
+              path: /
+              port: 9000
+              scheme: HTTP
+            initialDelaySeconds: 60
+            timeoutSeconds: 1
+            periodSeconds: 10
+            successThreshold: 1
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 9000
+              scheme: HTTP
+            initialDelaySeconds: 75
+            timeoutSeconds: 1
+            periodSeconds: 10
+            successThreshold: 1
+            failureThreshold: 5
+        terminationGracePeriodSeconds: 30
+        volumes:
+        - name: ${APPLICATION_NAME}-data
+          persistentVolumeClaim:
+            claimName: ${APPLICATION_NAME}-data
+        - name: ${APPLICATION_NAME}-extensions
+          persistentVolumeClaim:
+            claimName: ${APPLICATION_NAME}-extensions
+    triggers:
+    - type: ConfigChange
 - kind: Service
   apiVersion: v1
   metadata:
@@ -174,6 +167,26 @@ objects:
       targetPort: 5432
     selector:
       deploymentConfig: ${APPLICATION_NAME}-postgresql
+- kind: Service
+  apiVersion: v1
+  metadata:
+    annotations:
+      description: The Sonarqube server's http port
+      "service.alpha.openshift.io/dependencies": "[{\"name\": \"${APPLICATION_NAME}-postgresql\", \"kind\": \"Service\"}]"
+    labels:
+      app: ${APPLICATION_NAME}
+    name: ${APPLICATION_NAME}
+  spec:
+    ports:
+    - port: 9000
+      targetPort: 9000
+    selector:
+      app: ${APPLICATION_NAME}
+      deploymentconfig: ${APPLICATION_NAME}
+    sessionAffinity: None
+    type: ClusterIP
+  status:
+    loadBalancer: {}
 - kind: Route
   apiVersion: v1
   metadata:
@@ -187,9 +200,6 @@ objects:
     to:
       kind: Service
       name: ${APPLICATION_NAME}
-      weight: 100
-    port:
-      targetPort: 9000-http
     tls:
       termination: edge
       insecureEdgeTerminationPolicy: Redirect
@@ -233,7 +243,7 @@ parameters:
 - description: Docker image name
   name: DOCKER_IMAGE_NAME
   required: true
-  value: willemvd/openshift-sonarqube
+  value: willemvd/sonarqube-unprivileged
 - description: Docker image version
   name: DOCKER_IMAGE_VERSION
   required: true
@@ -253,6 +263,16 @@ parameters:
   name: SONARQUBE_POSTGRESQL_VOLUME_CAPACITY
   required: true
   value: 5Gi
+- description: Version of PostgreSQL image to be used (9.2, 9.4, 9.5 or latest).
+  displayName: Version of PostgreSQL Image
+  name: POSTGRESQL_VERSION
+  required: true
+  value: "9.5"
+- description: The OpenShift Namespace where the PostgreSQL ImageStream resides.
+  displayName: Namespace
+  name: NAMESPACE
+  required: true
+  value: openshift
 - description: Database name
   name: DB_DATABASE
   required: true
