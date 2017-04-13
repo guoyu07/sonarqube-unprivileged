@@ -1,4 +1,4 @@
-FROM sonarqube:6.2
+FROM sonarqube:6.3
 MAINTAINER willemvd <willemvd@github>
 
 # Database configuration
