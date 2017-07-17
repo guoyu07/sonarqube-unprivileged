@@ -1,13 +1,13 @@
 kind: Template
 apiVersion: v1
 labels:
-  version: "6.2"
+  version: "6.4"
   group: infrastructure
 metadata:
   annotations:
     description: SonarQube server
     tags: sonarqube,sonar,postgresql,postgresql-persistent,ci,instant-app
-    version: "6.2"
+    version: "6.4"
   name: sonarqube
 objects:
 - kind: ServiceAccount
@@ -247,7 +247,7 @@ parameters:
 - description: Docker image version
   name: DOCKER_IMAGE_VERSION
   required: true
-  value: "6.2"
+  value: "6.4"
 - description: 'Custom hostname for http service route.  Leave blank for default hostname, e.g.: <application-name>-<project>.<default-domain-suffix>'
   name: HOSTNAME
   value: ""

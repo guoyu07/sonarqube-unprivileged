@@ -1,4 +1,4 @@
-FROM sonarqube:6.3
+FROM sonarqube:6.4-alpine
 MAINTAINER willemvd <willemvd@github>
 
 # Database configuration
@@ -9,9 +9,11 @@ MAINTAINER willemvd <willemvd@github>
 
 VOLUME ["${SONARQUBE_HOME}/data", "${SONARQUBE_HOME}/extensions"]
 
-RUN useradd -l -u 99 -r -g 0 -m -s /sbin/nologin \
-    -c "sonarqube application user" sonarqube && \
+RUN adduser -u 99 -S -G root -H sonarqube && \
     chmod -R g+w ${SONARQUBE_HOME}
+#RUN useradd -l -u 99 -r -g 0 -m -s /sbin/nologin \
+#    -c "sonarqube application user" sonarqube && \
+#    chmod -R g+w ${SONARQUBE_HOME}
 
 USER sonarqube
 
