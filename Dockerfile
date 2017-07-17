@@ -11,9 +11,6 @@ VOLUME ["${SONARQUBE_HOME}/data", "${SONARQUBE_HOME}/extensions"]
 
 RUN adduser -u 99 -S -G root -H sonarqube && \
     chmod -R g+w ${SONARQUBE_HOME}
-#RUN useradd -l -u 99 -r -g 0 -m -s /sbin/nologin \
-#    -c "sonarqube application user" sonarqube && \
-#    chmod -R g+w ${SONARQUBE_HOME}
 
 USER sonarqube
 
