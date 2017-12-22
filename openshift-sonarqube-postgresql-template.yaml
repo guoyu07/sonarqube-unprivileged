@@ -247,7 +247,7 @@ parameters:
 - description: Docker image version
   name: DOCKER_IMAGE_VERSION
   required: true
-  value: "6.4"
+  value: "6.4-alpine"
 - description: 'Custom hostname for http service route.  Leave blank for default hostname, e.g.: <application-name>-<project>.<default-domain-suffix>'
   name: HOSTNAME
   value: ""
